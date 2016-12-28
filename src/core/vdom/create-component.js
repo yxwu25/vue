@@ -1,12 +1,11 @@
 /* @flow */
 
-import Vue from '../instance/index'
 import VNode from './vnode'
-import { normalizeChildren } from './helpers/index'
+import { resolveConstructorOptions } from '../instance/init'
 import { activeInstance, callHook } from '../instance/lifecycle'
 import { resolveSlots } from '../instance/render'
 import { createElement } from './create-element'
-import { warn, isObject, hasOwn, hyphenate, validateProp, bind } from '../util/index'
+import { warn, isObject, hasOwn, hyphenate, validateProp } from '../util/index'
 
 const hooks = { init, prepatch, insert, destroy }
 const hooksToMerge = Object.keys(hooks)
@@ -15,15 +14,16 @@ export function createComponent (
   Ctor: Class<Component> | Function | Object | void,
   data?: VNodeData,
   context: Component,
-  children?: VNodeChildren,
+  children: ?Array<VNode>,
   tag?: string
 ): VNode | void {
   if (!Ctor) {
     return
   }
 
+  const baseCtor = context.$options._base
   if (isObject(Ctor)) {
-    Ctor = Vue.extend(Ctor)
+    Ctor = baseCtor.extend(Ctor)
   }
 
   if (typeof Ctor !== 'function') {
@@ -38,7 +38,7 @@ export function createComponent (
     if (Ctor.resolved) {
       Ctor = Ctor.resolved
     } else {
-      Ctor = resolveAsyncComponent(Ctor, () => {
+      Ctor = resolveAsyncComponent(Ctor, baseCtor, () => {
         // it's ok to queue this on every render because
         // $forceUpdate is buffered by the scheduler.
         context.$forceUpdate()
@@ -50,6 +50,10 @@ export function createComponent (
       }
     }
   }
+
+  // resolve constructor options in case global mixins are applied after
+  // component constructor creation
+  resolveConstructorOptions(Ctor)
 
   data = data || {}
 
@@ -80,7 +84,7 @@ export function createComponent (
   const name = Ctor.options.name || tag
   const vnode = new VNode(
     `vue-component-${Ctor.cid}${name ? `-${name}` : ''}`,
-    data, undefined, undefined, undefined, undefined, context,
+    data, undefined, undefined, undefined, context,
     { Ctor, propsData, listeners, tag, children }
   )
   return vnode
@@ -91,7 +95,7 @@ function createFunctionalComponent (
   propsData: ?Object,
   data: VNodeData,
   context: Component,
-  children?: VNodeChildren
+  children: ?Array<VNode>
 ): VNode | void {
   const props = {}
   const propOptions = Ctor.options.props
@@ -100,19 +104,17 @@ function createFunctionalComponent (
       props[key] = validateProp(key, propOptions, propsData)
     }
   }
-  const vnode = Ctor.options.render.call(
-    null,
-    // ensure the createElement function in functional components
-    // gets a unique context - this is necessary for correct named slot check
-    bind(createElement, { _self: Object.create(context) }),
-    {
-      props,
-      data,
-      parent: context,
-      children: normalizeChildren(children),
-      slots: () => resolveSlots(children, context)
-    }
-  )
+  // ensure the createElement function in functional components
+  // gets a unique context - this is necessary for correct named slot check
+  const _context = Object.create(context)
+  const h = (a, b, c, d) => createElement(_context, a, b, c, d, true)
+  const vnode = Ctor.options.render.call(null, h, {
+    props,
+    data,
+    parent: context,
+    children,
+    slots: () => resolveSlots(children, context)
+  })
   if (vnode instanceof VNode) {
     vnode.functionalContext = context
     if (data.slot) {
@@ -124,7 +126,9 @@ function createFunctionalComponent (
 
 export function createComponentInstanceForVnode (
   vnode: any, // we know it's MountedComponentVNode but flow doesn't
-  parent: any // activeInstance in lifecycle state
+  parent: any, // activeInstance in lifecycle state
+  parentElm?: ?Node,
+  refElm?: ?Node
 ): Component {
   const vnodeComponentOptions = vnode.componentOptions
   const options: InternalComponentOptions = {
@@ -134,7 +138,9 @@ export function createComponentInstanceForVnode (
     _componentTag: vnodeComponentOptions.tag,
     _parentVnode: vnode,
     _parentListeners: vnodeComponentOptions.listeners,
-    _renderChildren: vnodeComponentOptions.children
+    _renderChildren: vnodeComponentOptions.children,
+    _parentElm: parentElm || null,
+    _refElm: refElm || null
   }
   // check inline-template render functions
   const inlineTemplate = vnode.data.inlineTemplate
@@ -145,10 +151,24 @@ export function createComponentInstanceForVnode (
   return new vnodeComponentOptions.Ctor(options)
 }
 
-function init (vnode: VNodeWithData, hydrating: boolean) {
+function init (
+  vnode: VNodeWithData,
+  hydrating: boolean,
+  parentElm: ?Node,
+  refElm: ?Node
+): ?boolean {
   if (!vnode.child || vnode.child._isDestroyed) {
-    const child = vnode.child = createComponentInstanceForVnode(vnode, activeInstance)
+    const child = vnode.child = createComponentInstanceForVnode(
+      vnode,
+      activeInstance,
+      parentElm,
+      refElm
+    )
     child.$mount(hydrating ? vnode.elm : undefined, hydrating)
+  } else if (vnode.data.keepAlive) {
+    // kept-alive components, treat as a patch
+    const mountedNode: any = vnode // work around flow
+    prepatch(mountedNode, mountedNode)
   }
 }
 
@@ -190,6 +210,7 @@ function destroy (vnode: MountedComponentVNode) {
 
 function resolveAsyncComponent (
   factory: Function,
+  baseCtor: Class<Component>,
   cb: Function
 ): Class<Component> | void {
   if (factory.requested) {
@@ -202,7 +223,7 @@ function resolveAsyncComponent (
 
     const resolve = (res: Object | Class<Component>) => {
       if (isObject(res)) {
-        res = Vue.extend(res)
+        res = baseCtor.extend(res)
       }
       // cache resolved
       factory.resolved = res
@@ -236,7 +257,7 @@ function resolveAsyncComponent (
 }
 
 function extractProps (data: VNodeData, Ctor: Class<Component>): ?Object {
-  // we are only extrating raw values here.
+  // we are only extracting raw values here.
   // validation and default values are handled in the child
   // component itself.
   const propOptions = Ctor.options.props
@@ -293,11 +314,9 @@ function mergeHooks (data: VNodeData) {
   }
 }
 
-function mergeHook (a: Function, b: Function): Function {
-  // since all hooks have at most two args, use fixed args
-  // to avoid having to use fn.apply().
-  return (_, __) => {
-    a(_, __)
-    b(_, __)
+function mergeHook (one: Function, two: Function): Function {
+  return function (a, b, c, d) {
+    one(a, b, c, d)
+    two(a, b, c, d)
   }
 }

@@ -4,7 +4,7 @@ import { isIE9 } from 'core/util/env'
 import { nextFrame } from 'web/runtime/transition-util'
 
 describe('Component keep-alive', () => {
-  const duration = injectStyles()
+  const { duration, buffer } = injectStyles()
   let components, one, two, el
   beforeEach(() => {
     one = {
@@ -82,6 +82,123 @@ describe('Component keep-alive', () => {
     }).then(done)
   })
 
+  function sharedAssertions (vm, done) {
+    expect(vm.$el.textContent).toBe('one')
+    assertHookCalls(one, [1, 1, 1, 0, 0])
+    assertHookCalls(two, [0, 0, 0, 0, 0])
+    vm.view = 'two'
+    waitForUpdate(() => {
+      expect(vm.$el.textContent).toBe('two')
+      assertHookCalls(one, [1, 1, 1, 1, 0])
+      assertHookCalls(two, [1, 1, 0, 0, 0])
+      vm.view = 'one'
+    }).then(() => {
+      expect(vm.$el.textContent).toBe('one')
+      assertHookCalls(one, [1, 1, 2, 1, 0])
+      assertHookCalls(two, [1, 1, 0, 0, 1])
+      vm.view = 'two'
+    }).then(() => {
+      expect(vm.$el.textContent).toBe('two')
+      assertHookCalls(one, [1, 1, 2, 2, 0])
+      assertHookCalls(two, [2, 2, 0, 0, 1])
+      vm.ok = false // teardown
+    }).then(() => {
+      expect(vm.$el.textContent).toBe('')
+      assertHookCalls(one, [1, 1, 2, 3, 1])
+      assertHookCalls(two, [2, 2, 0, 0, 2])
+    }).then(done)
+  }
+
+  it('include (string)', done => {
+    const vm = new Vue({
+      template: `
+        <div v-if="ok">
+          <keep-alive include="one">
+            <component :is="view"></component>
+          </keep-alive>
+        </div>
+      `,
+      data: {
+        view: 'one',
+        ok: true
+      },
+      components
+    }).$mount()
+    sharedAssertions(vm, done)
+  })
+
+  it('include (regex)', done => {
+    const vm = new Vue({
+      template: `
+        <div v-if="ok">
+          <keep-alive :include="/^one$/">
+            <component :is="view"></component>
+          </keep-alive>
+        </div>
+      `,
+      data: {
+        view: 'one',
+        ok: true
+      },
+      components
+    }).$mount()
+    sharedAssertions(vm, done)
+  })
+
+  it('exclude (string)', done => {
+    const vm = new Vue({
+      template: `
+        <div v-if="ok">
+          <keep-alive exclude="two">
+            <component :is="view"></component>
+          </keep-alive>
+        </div>
+      `,
+      data: {
+        view: 'one',
+        ok: true
+      },
+      components
+    }).$mount()
+    sharedAssertions(vm, done)
+  })
+
+  it('exclude (regex)', done => {
+    const vm = new Vue({
+      template: `
+        <div v-if="ok">
+          <keep-alive :exclude="/^two$/">
+            <component :is="view"></component>
+          </keep-alive>
+        </div>
+      `,
+      data: {
+        view: 'one',
+        ok: true
+      },
+      components
+    }).$mount()
+    sharedAssertions(vm, done)
+  })
+
+  it('include + exclude', done => {
+    const vm = new Vue({
+      template: `
+        <div v-if="ok">
+          <keep-alive include="one,two" exclude="two">
+            <component :is="view"></component>
+          </keep-alive>
+        </div>
+      `,
+      data: {
+        view: 'one',
+        ok: true
+      },
+      components
+    }).$mount()
+    sharedAssertions(vm, done)
+  })
+
   // #3882
   it('deeply nested keep-alive should be destroyed properly', done => {
     one.template = `<div><keep-alive><two></two></keep-alive></div>`
@@ -107,6 +224,38 @@ describe('Component keep-alive', () => {
     }).then(done)
   })
 
+  // #4237
+  it('should update latest props/listners for a re-activated component', done => {
+    const one = {
+      props: ['prop'],
+      template: `<div>one {{ prop }}</div>`
+    }
+    const two = {
+      props: ['prop'],
+      template: `<div>two {{ prop }}</div>`
+    }
+    const vm = new Vue({
+      data: { view: 'one', n: 1 },
+      template: `
+        <div>
+          <keep-alive>
+            <component :is="view" :prop="n"></component>
+          </keep-alive>
+        </div>
+      `,
+      components: { one, two }
+    }).$mount()
+
+    expect(vm.$el.textContent).toBe('one 1')
+    vm.n++
+    waitForUpdate(() => {
+      expect(vm.$el.textContent).toBe('one 2')
+      vm.view = 'two'
+    }).then(() => {
+      expect(vm.$el.textContent).toBe('two 2')
+    }).then(done)
+  })
+
   if (!isIE9) {
     it('with transition-mode out-in', done => {
       let next
@@ -116,7 +265,7 @@ describe('Component keep-alive', () => {
             <keep-alive>
               <component :is="view" class="test"></component>
             </keep-alive>
-          <transition>
+          </transition>
         </div>`,
         data: {
           view: 'one'
@@ -140,7 +289,7 @@ describe('Component keep-alive', () => {
         assertHookCalls(two, [0, 0, 0, 0, 0])
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-leave-active">one</div><!---->'
+          '<div class="test test-leave-active test-leave-to">one</div><!---->'
         )
       }).thenWaitFor(_next => { next = _next }).then(() => {
         expect(vm.$el.innerHTML).toBe('<!---->')
@@ -152,9 +301,9 @@ describe('Component keep-alive', () => {
         assertHookCalls(two, [1, 1, 1, 0, 0])
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-enter-active">two</div>'
+          '<div class="test test-enter-active test-enter-to">two</div>'
         )
-      }).thenWaitFor(duration + 10).then(() => {
+      }).thenWaitFor(duration + buffer).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">two</div>'
         )
@@ -170,7 +319,7 @@ describe('Component keep-alive', () => {
         assertHookCalls(two, [1, 1, 1, 1, 0])
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-leave-active">two</div><!---->'
+          '<div class="test test-leave-active test-leave-to">two</div><!---->'
         )
       }).thenWaitFor(_next => { next = _next }).then(() => {
         expect(vm.$el.innerHTML).toBe('<!---->')
@@ -182,9 +331,9 @@ describe('Component keep-alive', () => {
         assertHookCalls(two, [1, 1, 1, 1, 0])
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-enter-active">one</div>'
+          '<div class="test test-enter-active test-enter-to">one</div>'
         )
-      }).thenWaitFor(duration + 10).then(() => {
+      }).thenWaitFor(duration + buffer).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">one</div>'
         )
@@ -227,7 +376,7 @@ describe('Component keep-alive', () => {
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">one</div>' +
-          '<div class="test test-enter-active">two</div>'
+          '<div class="test test-enter-active test-enter-to">two</div>'
         )
       }).thenWaitFor(_next => { next = _next }).then(() => {
         expect(vm.$el.innerHTML).toBe(
@@ -241,10 +390,10 @@ describe('Component keep-alive', () => {
         )
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-leave-active">one</div>' +
+          '<div class="test test-leave-active test-leave-to">one</div>' +
           '<div class="test">two</div>'
         )
-      }).thenWaitFor(duration + 10).then(() => {
+      }).thenWaitFor(duration + buffer).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">two</div>'
         )
@@ -262,7 +411,7 @@ describe('Component keep-alive', () => {
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">two</div>' +
-          '<div class="test test-enter-active">one</div>'
+          '<div class="test test-enter-active test-enter-to">one</div>'
         )
       }).thenWaitFor(_next => { next = _next }).then(() => {
         expect(vm.$el.innerHTML).toBe(
@@ -276,10 +425,10 @@ describe('Component keep-alive', () => {
         )
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-leave-active">two</div>' +
+          '<div class="test test-leave-active test-leave-to">two</div>' +
           '<div class="test">one</div>'
         )
-      }).thenWaitFor(duration + 10).then(() => {
+      }).thenWaitFor(duration + buffer).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">one</div>'
         )
@@ -316,7 +465,7 @@ describe('Component keep-alive', () => {
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">one</div>' +
-          '<div class="test test-enter-active">two</div>'
+          '<div class="test test-enter-active test-enter-to">two</div>'
         )
         // switch again before enter finishes,
         // this cancels both enter and leave.
@@ -332,7 +481,7 @@ describe('Component keep-alive', () => {
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">two</div>' +
-          '<div class="test test-enter-active">one</div>'
+          '<div class="test test-enter-active test-enter-to">one</div>'
         )
       }).thenWaitFor(_next => { next = _next }).then(() => {
         expect(vm.$el.innerHTML).toBe(
@@ -346,14 +495,66 @@ describe('Component keep-alive', () => {
         )
       }).thenWaitFor(nextFrame).then(() => {
         expect(vm.$el.innerHTML).toBe(
-          '<div class="test test-leave-active">two</div>' +
+          '<div class="test test-leave-active test-leave-to">two</div>' +
           '<div class="test">one</div>'
         )
-      }).thenWaitFor(duration + 10).then(() => {
+      }).thenWaitFor(duration + buffer).then(() => {
         expect(vm.$el.innerHTML).toBe(
           '<div class="test">one</div>'
         )
       }).then(done).then(done)
+    })
+
+    // #4339
+    it('component with inner transition', done => {
+      const vm = new Vue({
+        template: `
+          <div>
+            <keep-alive>
+              <component ref="test" :is="view"></component>
+            </keep-alive>
+          </div>
+        `,
+        data: { view: 'foo' },
+        components: {
+          foo: { template: '<transition><div class="test">foo</div></transition>' },
+          bar: { template: '<transition name="test"><div class="test">bar</div></transition>' }
+        }
+      }).$mount(el)
+
+      // should not apply transition on initial render by default
+      expect(vm.$el.innerHTML).toBe('<div class="test">foo</div>')
+      vm.view = 'bar'
+      waitForUpdate(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test v-leave v-leave-active">foo</div>' +
+          '<div class="test test-enter test-enter-active">bar</div>'
+        )
+      }).thenWaitFor(nextFrame).then(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test v-leave-active v-leave-to">foo</div>' +
+          '<div class="test test-enter-active test-enter-to">bar</div>'
+        )
+      }).thenWaitFor(duration + buffer).then(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test">bar</div>'
+        )
+        vm.view = 'foo'
+      }).then(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test test-leave test-leave-active">bar</div>' +
+          '<div class="test v-enter v-enter-active">foo</div>'
+        )
+      }).thenWaitFor(nextFrame).then(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test test-leave-active test-leave-to">bar</div>' +
+          '<div class="test v-enter-active v-enter-to">foo</div>'
+        )
+      }).thenWaitFor(duration + buffer).then(() => {
+        expect(vm.$el.innerHTML).toBe(
+          '<div class="test">foo</div>'
+        )
+      }).then(done)
     })
   }
 })

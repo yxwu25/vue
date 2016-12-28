@@ -263,6 +263,113 @@ describe('Directive v-model select', () => {
     }).then(done)
   })
 
+  it('multiple selects', (done) => {
+    const spy = jasmine.createSpy()
+    const vm = new Vue({
+      data: {
+        selections: ['', ''],
+        selectBoxes: [
+          [
+            { value: 'foo', text: 'foo' },
+            { value: 'bar', text: 'bar' }
+          ],
+          [
+            { value: 'day', text: 'day' },
+            { value: 'night', text: 'night' }
+          ]
+        ]
+      },
+      watch: {
+        selections: spy
+      },
+      template:
+        '<div>' +
+          '<select v-for="(item, index) in selectBoxes" v-model="selections[index]">' +
+            '<option v-for="element in item" v-bind:value="element.value" v-text="element.text"></option>' +
+          '</select>' +
+          '<span ref="rs">{{selections}}</span>' +
+        '</div>'
+    }).$mount()
+    document.body.appendChild(vm.$el)
+    var selects = vm.$el.getElementsByTagName('select')
+    var select0 = selects[0]
+    select0.options[0].selected = true
+    triggerEvent(select0, 'change')
+    waitForUpdate(() => {
+      expect(spy).toHaveBeenCalled()
+      expect(vm.selections).toEqual(['foo', ''])
+    }).then(done)
+  })
+
+  it('.number modifier', () => {
+    const vm = new Vue({
+      data: {
+        test: 2
+      },
+      template:
+        '<select v-model.number="test">' +
+          '<option value="1">a</option>' +
+          '<option :value="2">b</option>' +
+          '<option :value="3">c</option>' +
+        '</select>'
+    }).$mount()
+    document.body.appendChild(vm.$el)
+    updateSelect(vm.$el, '1')
+    triggerEvent(vm.$el, 'change')
+    expect(vm.test).toBe(1)
+  })
+
+  it('should respect different pritive type value', (done) => {
+    const vm = new Vue({
+      data: {
+        test: 0
+      },
+      template:
+        '<select v-model.number="test">' +
+          '<option value="">a</option>' +
+          '<option value="0">b</option>' +
+          '<option value="1">c</option>' +
+          '<option value="false">c</option>' +
+          '<option value="true">c</option>' +
+        '</select>'
+    }).$mount()
+    var opts = vm.$el.options
+    expect(opts[0].selected).toBe(false)
+    expect(opts[1].selected).toBe(true)
+    expect(opts[2].selected).toBe(false)
+    expect(opts[3].selected).toBe(false)
+    expect(opts[4].selected).toBe(false)
+    vm.test = 1
+    waitForUpdate(() => {
+      expect(opts[0].selected).toBe(false)
+      expect(opts[1].selected).toBe(false)
+      expect(opts[2].selected).toBe(true)
+      expect(opts[3].selected).toBe(false)
+      expect(opts[4].selected).toBe(false)
+      vm.test = ''
+    }).then(() => {
+      expect(opts[0].selected).toBe(true)
+      expect(opts[1].selected).toBe(false)
+      expect(opts[2].selected).toBe(false)
+      expect(opts[3].selected).toBe(false)
+      expect(opts[4].selected).toBe(false)
+      vm.test = false
+    }).then(() => {
+      expect(opts[0].selected).toBe(false)
+      expect(opts[1].selected).toBe(false)
+      expect(opts[2].selected).toBe(false)
+      expect(opts[3].selected).toBe(true)
+      expect(opts[4].selected).toBe(false)
+      vm.test = true
+    }).then(() => {
+      expect(opts[0].selected).toBe(false)
+      expect(opts[1].selected).toBe(false)
+      expect(opts[2].selected).toBe(false)
+      expect(opts[3].selected).toBe(false)
+      expect(opts[4].selected).toBe(true)
+    }).then(done)
+  })
+
   it('should warn inline selected', () => {
     const vm = new Vue({
       data: {
@@ -278,7 +385,7 @@ describe('Directive v-model select', () => {
       .toHaveBeenWarned()
   })
 
-  it('should warn multiple with non-Array value', () => {
+  it('should warn multiple with non-Array value', done => {
     new Vue({
       data: {
         test: 'meh'
@@ -286,7 +393,11 @@ describe('Directive v-model select', () => {
       template:
         '<select v-model="test" multiple></select>'
     }).$mount()
-    expect('<select multiple v-model="test"> expects an Array value for its binding, but got String')
-      .toHaveBeenWarned()
+    // IE warns on a setTimeout as well
+    setTimeout(() => {
+      expect('<select multiple v-model="test"> expects an Array value for its binding, but got String')
+        .toHaveBeenWarned()
+      done()
+    }, 0)
   })
 })

@@ -8,13 +8,6 @@ if (!fs.existsSync('dist')) {
   fs.mkdirSync('dist')
 }
 
-// Update main file
-const version = process.env.VERSION || require('../package.json').version
-const main = fs
-  .readFileSync('src/core/index.js', 'utf-8')
-  .replace(/Vue\.version = '[^']+'/, "Vue.version = '" + version + "'")
-fs.writeFileSync('src/core/index.js', main)
-
 let builds = require('./config').getAllBuilds()
 
 // filter builds via command line arg
@@ -22,6 +15,11 @@ if (process.argv[2]) {
   const filters = process.argv[2].split(',')
   builds = builds.filter(b => {
     return filters.some(f => b.dest.indexOf(f) > -1)
+  })
+} else {
+  // filter out weex builds by default
+  builds = builds.filter(b => {
+    return b.dest.indexOf('weex') === -1
   })
 }
 
@@ -57,35 +55,32 @@ function buildEntry (config) {
           pure_funcs: ['makeMap']
         }
       }).code
-      return write(config.dest, minified).then(zip(config.dest))
+      return write(config.dest, minified, true)
     } else {
       return write(config.dest, code)
     }
   })
 }
 
-function write (dest, code) {
-  return new Promise(function (resolve, reject) {
-    fs.writeFile(dest, code, function (err) {
-      if (err) return reject(err)
-      console.log(blue(path.relative(process.cwd(), dest)) + ' ' + getSize(code))
+function write (dest, code, zip) {
+  return new Promise((resolve, reject) => {
+    function report (extra) {
+      console.log(blue(path.relative(process.cwd(), dest)) + ' ' + getSize(code) + (extra || ''))
       resolve()
+    }
+
+    fs.writeFile(dest, code, err => {
+      if (err) return reject(err)
+      if (zip) {
+        zlib.gzip(code, (err, zipped) => {
+          if (err) return reject(err)
+          report(' (gzipped: ' + getSize(zipped) + ')')
+        })
+      } else {
+        report()
+      }
     })
   })
-}
-
-function zip (file) {
-  return function () {
-    return new Promise(function (resolve, reject) {
-      fs.readFile(file, function (err, buf) {
-        if (err) return reject(err)
-        zlib.gzip(buf, function (err, buf) {
-          if (err) return reject(err)
-          write(file + '.gz', buf).then(resolve)
-        })
-      })
-    })
-  }
 }
 
 function getSize (code) {

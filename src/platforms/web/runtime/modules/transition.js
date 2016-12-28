@@ -11,7 +11,7 @@ import {
   whenTransitionEnds
 } from '../transition-util'
 
-export function enter (vnode: VNodeWithData) {
+export function enter (vnode: VNodeWithData, toggleDisplay: ?() => void) {
   const el: any = vnode.elm
 
   // call leave callback now
@@ -34,8 +34,10 @@ export function enter (vnode: VNodeWithData) {
     css,
     type,
     enterClass,
+    enterToClass,
     enterActiveClass,
     appearClass,
+    appearToClass,
     appearActiveClass,
     beforeEnter,
     enter,
@@ -51,10 +53,12 @@ export function enter (vnode: VNodeWithData) {
   // transition. One edge case to check is when the <transition> is placed
   // as the root node of a child component. In that case we need to check
   // <transition>'s parent for appear check.
-  const transitionNode = activeInstance.$vnode
-  const context = transitionNode && transitionNode.parent
-    ? transitionNode.parent.context
-    : activeInstance
+  let context = activeInstance
+  let transitionNode = activeInstance.$vnode
+  while (transitionNode && transitionNode.parent) {
+    transitionNode = transitionNode.parent
+    context = transitionNode.context
+  }
 
   const isAppear = !context._isMounted || !vnode.isRootInsert
 
@@ -64,6 +68,7 @@ export function enter (vnode: VNodeWithData) {
 
   const startClass = isAppear ? appearClass : enterClass
   const activeClass = isAppear ? appearActiveClass : enterActiveClass
+  const toClass = isAppear ? appearToClass : enterToClass
   const beforeEnterHook = isAppear ? (beforeAppear || beforeEnter) : beforeEnter
   const enterHook = isAppear ? (typeof appear === 'function' ? appear : enter) : enter
   const afterEnterHook = isAppear ? (afterAppear || afterEnter) : afterEnter
@@ -78,6 +83,7 @@ export function enter (vnode: VNodeWithData) {
 
   const cb = el._enterCb = once(() => {
     if (expectsCSS) {
+      removeTransitionClass(el, toClass)
       removeTransitionClass(el, activeClass)
     }
     if (cb.cancelled) {
@@ -96,7 +102,10 @@ export function enter (vnode: VNodeWithData) {
     mergeVNodeHook(vnode.data.hook || (vnode.data.hook = {}), 'insert', () => {
       const parent = el.parentNode
       const pendingNode = parent && parent._pending && parent._pending[vnode.key]
-      if (pendingNode && pendingNode.tag === vnode.tag && pendingNode.elm._leaveCb) {
+      if (pendingNode &&
+          pendingNode.context === vnode.context &&
+          pendingNode.tag === vnode.tag &&
+          pendingNode.elm._leaveCb) {
         pendingNode.elm._leaveCb()
       }
       enterHook && enterHook(el, cb)
@@ -109,6 +118,7 @@ export function enter (vnode: VNodeWithData) {
     addTransitionClass(el, startClass)
     addTransitionClass(el, activeClass)
     nextFrame(() => {
+      addTransitionClass(el, toClass)
       removeTransitionClass(el, startClass)
       if (!cb.cancelled && !userWantsControl) {
         whenTransitionEnds(el, type, cb)
@@ -117,6 +127,7 @@ export function enter (vnode: VNodeWithData) {
   }
 
   if (vnode.data.show) {
+    toggleDisplay && toggleDisplay()
     enterHook && enterHook(el, cb)
   }
 
@@ -148,6 +159,7 @@ export function leave (vnode: VNodeWithData, rm: Function) {
     css,
     type,
     leaveClass,
+    leaveToClass,
     leaveActiveClass,
     beforeLeave,
     leave,
@@ -168,6 +180,7 @@ export function leave (vnode: VNodeWithData, rm: Function) {
       el.parentNode._pending[vnode.key] = null
     }
     if (expectsCSS) {
+      removeTransitionClass(el, leaveToClass)
       removeTransitionClass(el, leaveActiveClass)
     }
     if (cb.cancelled) {
@@ -202,6 +215,7 @@ export function leave (vnode: VNodeWithData, rm: Function) {
       addTransitionClass(el, leaveClass)
       addTransitionClass(el, leaveActiveClass)
       nextFrame(() => {
+        addTransitionClass(el, leaveToClass)
         removeTransitionClass(el, leaveClass)
         if (!cb.cancelled && !userWantsControl) {
           whenTransitionEnds(el, type, cb)
@@ -237,6 +251,9 @@ const autoCssTransition: (name: string) => Object = cached(name => {
     enterClass: `${name}-enter`,
     leaveClass: `${name}-leave`,
     appearClass: `${name}-enter`,
+    enterToClass: `${name}-enter-to`,
+    leaveToClass: `${name}-leave-to`,
+    appearToClass: `${name}-enter-to`,
     enterActiveClass: `${name}-enter-active`,
     leaveActiveClass: `${name}-leave-active`,
     appearActiveClass: `${name}-enter-active`
@@ -253,12 +270,15 @@ function once (fn: Function): Function {
   }
 }
 
+function _enter (_: any, vnode: VNodeWithData) {
+  if (!vnode.data.show) {
+    enter(vnode)
+  }
+}
+
 export default inBrowser ? {
-  create (_: any, vnode: VNodeWithData) {
-    if (!vnode.data.show) {
-      enter(vnode)
-    }
-  },
+  create: _enter,
+  activate: _enter,
   remove (vnode: VNode, rm: Function) {
     /* istanbul ignore else */
     if (!vnode.data.show) {

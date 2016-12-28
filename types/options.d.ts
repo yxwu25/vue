@@ -32,6 +32,8 @@ export interface ComponentOptions<V extends Vue> {
   mounted?(this: V): void;
   beforeUpdate?(this: V): void;
   updated?(this: V): void;
+  activated?(this: V): void;
+  deactivated?(this: V): void;
 
   directives?: { [key: string]: DirectiveOptions | DirectiveFunction };
   components?: { [key: string]: Component | AsyncComponent };
@@ -55,7 +57,7 @@ export interface FunctionalComponentOptions {
 export interface RenderContext {
   props: any;
   children: VNode[];
-  slots: any;
+  slots(): any;
   data: VNodeData;
   parent: Vue;
 }

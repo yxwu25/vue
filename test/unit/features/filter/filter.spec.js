@@ -1,4 +1,5 @@
 import Vue from 'vue'
+import { parseFilters } from 'compiler/parser/filter-parser'
 
 describe('Filters', () => {
   it('basic usage', () => {
@@ -26,6 +27,55 @@ describe('Filters', () => {
       }
     }).$mount()
     expect(vm.$el.textContent).toBe('IH')
+  })
+
+  it('in v-bind', () => {
+    const vm = new Vue({
+      template: `
+        <div
+          v-bind:id="id | upper | reverse"
+          :class="cls | reverse"
+          :ref="ref | lower">
+        </div>
+      `,
+      filters: {
+        upper: v => v.toUpperCase(),
+        reverse: v => v.split('').reverse().join(''),
+        lower: v => v.toLowerCase()
+      },
+      data: {
+        id: 'abc',
+        cls: 'foo',
+        ref: 'BAR'
+      }
+    }).$mount()
+    expect(vm.$el.id).toBe('CBA')
+    expect(vm.$el.className).toBe('oof')
+    expect(vm.$refs.bar).toBe(vm.$el)
+  })
+
+  it('handle regex with pipe', () => {
+    const vm = new Vue({
+      template: `<test ref="test" :pattern="/a|b\\// | identity"></test>`,
+      filters: { identity: v => v },
+      components: {
+        test: {
+          props: ['pattern'],
+          template: '<div></div>'
+        }
+      }
+    }).$mount()
+    expect(vm.$refs.test.pattern instanceof RegExp).toBe(true)
+    expect(vm.$refs.test.pattern.toString()).toBe('/a|b\\//')
+  })
+
+  it('handle division', () => {
+    const vm = new Vue({
+      data: { a: 2 },
+      template: `<div>{{ 1/a / 4 | double }}</div>`,
+      filters: { double: v => v * 2 }
+    }).$mount()
+    expect(vm.$el.textContent).toBe(String(1 / 4))
   })
 
   it('arguments', () => {
@@ -95,5 +145,9 @@ describe('Filters', () => {
       data: { msg: 'foo' }
     }).$mount()
     expect('Failed to resolve filter: upper').toHaveBeenWarned()
+  })
+
+  it('support template string', () => {
+    expect(parseFilters('`a | ${b}c` | d')).toBe('_f("d")(`a | ${b}c`)')
   })
 })

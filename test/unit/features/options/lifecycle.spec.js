@@ -45,6 +45,7 @@ describe('Options lifecyce hooks', () => {
   describe('beforeMount', () => {
     it('should not have mounted', () => {
       const vm = new Vue({
+        render () {},
         beforeMount () {
           spy()
           expect(this._isMounted).toBe(false)
@@ -160,6 +161,7 @@ describe('Options lifecyce hooks', () => {
   describe('beforeDestroy', () => {
     it('should be called before destroy', () => {
       const vm = new Vue({
+        render () {},
         beforeDestroy () {
           spy()
           expect(this._isBeingDestroyed).toBe(false)
@@ -177,6 +179,7 @@ describe('Options lifecyce hooks', () => {
   describe('destroyed', () => {
     it('should be called after destroy', () => {
       const vm = new Vue({
+        render () {},
         destroyed () {
           spy()
           expect(this._isBeingDestroyed).toBe(true)
@@ -189,5 +192,30 @@ describe('Options lifecyce hooks', () => {
       expect(spy).toHaveBeenCalled()
       expect(spy.calls.count()).toBe(1)
     })
+  })
+
+  it('should emit hook events', () => {
+    const created = jasmine.createSpy()
+    const mounted = jasmine.createSpy()
+    const destroyed = jasmine.createSpy()
+    const vm = new Vue({
+      render () {},
+      beforeCreate () {
+        this.$on('hook:created', created)
+        this.$on('hook:mounted', mounted)
+        this.$on('hook:destroyed', destroyed)
+      }
+    })
+
+    expect(created).toHaveBeenCalled()
+    expect(mounted).not.toHaveBeenCalled()
+    expect(destroyed).not.toHaveBeenCalled()
+
+    vm.$mount()
+    expect(mounted).toHaveBeenCalled()
+    expect(destroyed).not.toHaveBeenCalled()
+
+    vm.$destroy()
+    expect(destroyed).toHaveBeenCalled()
   })
 })

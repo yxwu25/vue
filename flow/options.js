@@ -4,8 +4,10 @@ declare type InternalComponentOptions = {
   propsData: ?Object;
   _parentVnode: VNode;
   _parentListeners: ?Object;
-  _renderChildren: ?VNodeChildren;
+  _renderChildren: ?Array<VNode>;
   _componentTag: ?string;
+  _parentElm: ?Node;
+  _refElm: ?Node;
   render?: Function;
   staticRenderFns?: Array<Function>
 }
@@ -57,7 +59,12 @@ declare type ComponentOptions = {
   _propKeys?: Array<string>;
   _parentVnode?: VNode;
   _parentListeners?: ?Object;
-  _renderChildren?: ?VNodeChildren
+  _renderChildren?: ?Array<VNode>;
+  _componentTag: ?string;
+  _scopeId: ?string;
+  _base: Class<Component>;
+  _parentElm: ?Node;
+  _refElm: ?Node;
 }
 
 declare type PropOptions = {

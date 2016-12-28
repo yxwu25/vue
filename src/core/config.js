@@ -1,6 +1,6 @@
 /* @flow */
 
-import { no, noop } from 'shared/util'
+import { no, noop, identity } from 'shared/util'
 
 export type Config = {
   // user
@@ -8,18 +8,18 @@ export type Config = {
   silent: boolean;
   devtools: boolean;
   errorHandler: ?Function;
-  ignoredElements: ?Array<string>;
+  ignoredElements: Array<string>;
   keyCodes: { [key: string]: number };
   // platform
   isReservedTag: (x?: string) => boolean;
+  parsePlatformTagName: (x: string) => string;
   isUnknownElement: (x?: string) => boolean;
   getTagNamespace: (x?: string) => string | void;
-  mustUseProp: (x?: string) => boolean;
+  mustUseProp: (tag?: string, x?: string) => boolean;
   // internal
   _assetTypes: Array<string>;
   _lifecycleHooks: Array<string>;
   _maxUpdateCount: number;
-  _isServer: boolean;
 }
 
 const config: Config = {
@@ -46,7 +46,7 @@ const config: Config = {
   /**
    * Ignore certain custom elements
    */
-  ignoredElements: null,
+  ignoredElements: [],
 
   /**
    * Custom user key aliases for v-on
@@ -69,6 +69,11 @@ const config: Config = {
    * Get the namespace of an element
    */
   getTagNamespace: noop,
+
+  /**
+   * Parse the real tag name for the specific platform.
+   */
+  parsePlatformTagName: identity,
 
   /**
    * Check if an attribute must be bound using property, e.g. value
@@ -104,12 +109,7 @@ const config: Config = {
   /**
    * Max circular updates allowed in a scheduler flush cycle.
    */
-  _maxUpdateCount: 100,
-
-  /**
-   * Server rendering?
-   */
-  _isServer: process.env.VUE_ENV === 'server'
+  _maxUpdateCount: 100
 }
 
 export default config

@@ -64,6 +64,102 @@ describe('Directive v-model text', () => {
     expect(vm.test).toBe('what')
   })
 
+  it('.number focus and typing', (done) => {
+    const vm = new Vue({
+      data: {
+        test: 0,
+        update: 0
+      },
+      template:
+        '<div>' +
+          '<input ref="input" v-model.number="test">{{ update }}' +
+          '<input ref="blur">' +
+        '</div>'
+    }).$mount()
+    document.body.appendChild(vm.$el)
+    vm.$refs.input.focus()
+    expect(vm.test).toBe(0)
+    vm.$refs.input.value = '1.0'
+    triggerEvent(vm.$refs.input, 'input')
+    expect(vm.test).toBe(1)
+    vm.update++
+    waitForUpdate(() => {
+      expect(vm.$refs.input.value).toBe('1.0')
+      vm.$refs.blur.focus()
+      vm.update++
+    }).then(() => {
+      expect(vm.$refs.input.value).toBe('1')
+    }).then(done)
+  })
+
+  it('.trim focus and typing', (done) => {
+    const vm = new Vue({
+      data: {
+        test: 'abc',
+        update: 0
+      },
+      template:
+        '<div>' +
+          '<input ref="input" v-model.trim="test" type="text">{{ update }}' +
+          '<input ref="blur"/>' +
+        '</div>'
+    }).$mount()
+    document.body.appendChild(vm.$el)
+    vm.$refs.input.focus()
+    vm.$refs.input.value = ' abc '
+    triggerEvent(vm.$refs.input, 'input')
+    expect(vm.test).toBe('abc')
+    vm.update++
+    waitForUpdate(() => {
+      expect(vm.$refs.input.value).toBe(' abc ')
+      vm.$refs.blur.focus()
+      vm.update++
+    }).then(() => {
+      expect(vm.$refs.input.value).toBe('abc')
+    }).then(done)
+  })
+
+  it('multiple inputs', (done) => {
+    const spy = jasmine.createSpy()
+    const vm = new Vue({
+      data: {
+        selections: [[1, 2, 3], [4, 5]],
+        inputList: [
+          {
+            name: 'questionA',
+            data: ['a', 'b', 'c']
+          },
+          {
+            name: 'questionB',
+            data: ['1', '2']
+          }
+        ]
+      },
+      watch: {
+        selections: spy
+      },
+      template:
+        '<div>' +
+          '<div v-for="(inputGroup, idx) in inputList">' +
+            '<div>' +
+              '<span v-for="(item, index) in inputGroup.data">' +
+                '<input v-bind:name="item" type="text" v-model.number="selections[idx][index]" v-bind:id="idx+\'-\'+index"/>' +
+                '<label>{{item}}</label>' +
+              '</span>' +
+            '</div>' +
+          '</div>' +
+          '<span ref="rs">{{selections}}</span>' +
+        '</div>'
+    }).$mount()
+    var inputs = vm.$el.getElementsByTagName('input')
+    inputs[1].value = 'test'
+    triggerEvent(inputs[1], 'input')
+    waitForUpdate(() => {
+      expect(spy).toHaveBeenCalled()
+      expect(vm.selections).toEqual([[1, 'test', 3], [4, 5]])
+    }).then(done)
+  })
+
   if (isIE9) {
     it('IE9 selectionchange', done => {
       const vm = new Vue({

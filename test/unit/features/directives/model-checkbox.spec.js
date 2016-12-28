@@ -133,6 +133,90 @@ describe('Directive v-model checkbox', () => {
     }).then(done)
   })
 
+  it('.number modifier', () => {
+    const vm = new Vue({
+      data: {
+        test: [],
+        check: true
+      },
+      template: `
+        <div>
+          <input type="checkbox" v-model.number="test" value="1">
+          <input type="checkbox" v-model="test" value="2">
+          <input type="checkbox" v-model.number="check">
+        </div>
+      `
+    }).$mount()
+    document.body.appendChild(vm.$el)
+    var checkboxInputs = vm.$el.getElementsByTagName('input')
+    expect(checkboxInputs[0].checked).toBe(false)
+    expect(checkboxInputs[1].checked).toBe(false)
+    expect(checkboxInputs[2].checked).toBe(true)
+    checkboxInputs[0].click()
+    checkboxInputs[1].click()
+    checkboxInputs[2].click()
+    expect(vm.test).toEqual([1, '2'])
+    expect(vm.check).toEqual(false)
+  })
+
+  it('should respect different primitive type value', (done) => {
+    const vm = new Vue({
+      data: {
+        test: [0]
+      },
+      template:
+        '<div>' +
+          '<input type="checkbox" value="" v-model="test">' +
+          '<input type="checkbox" value="0" v-model="test">' +
+          '<input type="checkbox" value="1" v-model="test">' +
+          '<input type="checkbox" value="false" v-model="test">' +
+          '<input type="checkbox" value="true" v-model="test">' +
+        '</div>'
+    }).$mount()
+    var checkboxInput = vm.$el.children
+    expect(checkboxInput[0].checked).toBe(false)
+    expect(checkboxInput[1].checked).toBe(true)
+    expect(checkboxInput[2].checked).toBe(false)
+    expect(checkboxInput[3].checked).toBe(false)
+    expect(checkboxInput[4].checked).toBe(false)
+    vm.test = [1]
+    waitForUpdate(() => {
+      expect(checkboxInput[0].checked).toBe(false)
+      expect(checkboxInput[1].checked).toBe(false)
+      expect(checkboxInput[2].checked).toBe(true)
+      expect(checkboxInput[3].checked).toBe(false)
+      expect(checkboxInput[4].checked).toBe(false)
+      vm.test = ['']
+    }).then(() => {
+      expect(checkboxInput[0].checked).toBe(true)
+      expect(checkboxInput[1].checked).toBe(false)
+      expect(checkboxInput[2].checked).toBe(false)
+      expect(checkboxInput[3].checked).toBe(false)
+      expect(checkboxInput[4].checked).toBe(false)
+      vm.test = [false]
+    }).then(() => {
+      expect(checkboxInput[0].checked).toBe(false)
+      expect(checkboxInput[1].checked).toBe(false)
+      expect(checkboxInput[2].checked).toBe(false)
+      expect(checkboxInput[3].checked).toBe(true)
+      expect(checkboxInput[4].checked).toBe(false)
+      vm.test = [true]
+    }).then(() => {
+      expect(checkboxInput[0].checked).toBe(false)
+      expect(checkboxInput[1].checked).toBe(false)
+      expect(checkboxInput[2].checked).toBe(false)
+      expect(checkboxInput[3].checked).toBe(false)
+      expect(checkboxInput[4].checked).toBe(true)
+      vm.test = ['', 0, 1, false, true]
+    }).then(() => {
+      expect(checkboxInput[0].checked).toBe(true)
+      expect(checkboxInput[1].checked).toBe(true)
+      expect(checkboxInput[2].checked).toBe(true)
+      expect(checkboxInput[3].checked).toBe(true)
+      expect(checkboxInput[4].checked).toBe(true)
+    }).then(done)
+  })
+
   it('warn inline checked', () => {
     const vm = new Vue({
       template: `<input type="checkbox" v-model="test" checked>`,

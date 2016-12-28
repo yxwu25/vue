@@ -4,11 +4,18 @@ import { baseOptions } from 'web/compiler/index'
 
 describe('optimizer', () => {
   it('simple', () => {
-    const ast = parse('<h1 id="section1">hello world</h1>', baseOptions)
+    const ast = parse('<h1 id="section1"><span>hello world</span></h1>', baseOptions)
     optimize(ast, baseOptions)
     expect(ast.static).toBe(true) // h1
     expect(ast.staticRoot).toBe(true)
-    expect(ast.children[0].static).toBe(true) // text node
+    expect(ast.children[0].static).toBe(true) // span
+  })
+
+  it('skip simple nodes', () => {
+    const ast = parse('<h1 id="section1">hello</h1>', baseOptions)
+    optimize(ast, baseOptions)
+    expect(ast.static).toBe(true)
+    expect(ast.staticRoot).toBe(false) // this is too simple to warrant a static tree
   })
 
   it('interpolation', () => {
@@ -59,7 +66,7 @@ describe('optimizer', () => {
     optimize(ast, baseOptions)
     expect(ast.static).toBe(false)
     expect(ast.children[0].static).toBe(false)
-    expect(ast.children[0].elseBlock.static).toBeUndefined()
+    expect(ast.children[0].ifConditions[1].block.static).toBeUndefined()
   })
 
   it('v-pre directive', () => {
@@ -90,26 +97,18 @@ describe('optimizer', () => {
     expect(ast.children[0].static).toBe(false) // text node
   })
 
-  it('render tag', () => {
-    const ast = parse('<render :method="onRender"><p>hello</p></render>', baseOptions)
-    optimize(ast, baseOptions)
-    expect(ast.static).toBe(false)
-    expect(ast.children[0].static).toBe(true)
-    expect(ast.children[0].children[0].static).toBe(true)
-  })
-
   it('single slot', () => {
-    const ast = parse('<slot>hello</slot>', baseOptions)
+    const ast = parse('<div><slot>hello</slot></div>', baseOptions)
     optimize(ast, baseOptions)
-    expect(ast.static).toBe(false) // slot
-    expect(ast.children[0].static).toBe(true) // text node
+    expect(ast.children[0].static).toBe(false) // slot
+    expect(ast.children[0].children[0].static).toBe(true) // text node
   })
 
   it('named slot', () => {
-    const ast = parse('<slot name="one">hello world</slot>', baseOptions)
+    const ast = parse('<div><slot name="one">hello world</slot></div>', baseOptions)
     optimize(ast, baseOptions)
-    expect(ast.static).toBe(false) // slot
-    expect(ast.children[0].static).toBe(true) // text node
+    expect(ast.children[0].static).toBe(false) // slot
+    expect(ast.children[0].children[0].static).toBe(true) // text node
   })
 
   it('slot target', () => {
@@ -186,7 +185,7 @@ describe('optimizer', () => {
   })
 
   it('custom directive', () => {
-    const ast = parse('<fom><input type="text" name="field1" :value="msg" v-validate:field1="required"></form>', baseOptions)
+    const ast = parse('<form><input type="text" name="field1" :value="msg" v-validate:field1="required"></form>', baseOptions)
     optimize(ast, baseOptions)
     expect(ast.static).toBe(false)
     expect(ast.children[0].static).toBe(false)
@@ -205,9 +204,37 @@ describe('optimizer', () => {
   })
 
   it('mark static trees inside v-for', () => {
-    const ast = parse(`<div><div v-for="i in 10"><span>hi</span></div></div>`, baseOptions)
+    const ast = parse(`<div><div v-for="i in 10"><p><span>hi</span></p></div></div>`, baseOptions)
     optimize(ast, baseOptions)
     expect(ast.children[0].children[0].staticRoot).toBe(true)
     expect(ast.children[0].children[0].staticInFor).toBe(true)
+  })
+
+  it('mark static trees inside v-for with nested v-else and v-once', () => {
+    const ast = parse(`
+      <div v-if="1"></div>
+      <div v-else-if="2">
+        <div v-for="i in 10" :key="i">
+          <div v-if="1">{{ i }}</div>
+          <div v-else-if="2" v-once>{{ i }}</div>
+          <div v-else v-once>{{ i }}</div>
+        </div>
+      </div>
+      <div v-else>
+        <div v-for="i in 10" :key="i">
+          <div v-if="1">{{ i }}</div>
+          <div v-else v-once>{{ i }}</div>
+        </div>
+      </div>
+      `, baseOptions)
+    optimize(ast, baseOptions)
+    expect(ast.ifConditions[1].block.children[0].children[0].ifConditions[1].block.staticRoot).toBe(false)
+    expect(ast.ifConditions[1].block.children[0].children[0].ifConditions[1].block.staticInFor).toBe(true)
+
+    expect(ast.ifConditions[1].block.children[0].children[0].ifConditions[2].block.staticRoot).toBe(false)
+    expect(ast.ifConditions[1].block.children[0].children[0].ifConditions[2].block.staticInFor).toBe(true)
+
+    expect(ast.ifConditions[2].block.children[0].children[0].ifConditions[1].block.staticRoot).toBe(false)
+    expect(ast.ifConditions[2].block.children[0].children[0].ifConditions[1].block.staticInFor).toBe(true)
   })
 })

@@ -1,10 +1,11 @@
 /* @flow */
 
 import Watcher from '../observer/watcher'
-import { emptyVNode } from '../vdom/vnode'
+import { createEmptyVNode } from '../vdom/vnode'
 import { observerState } from '../observer/index'
 import { warn, validateProp, remove, noop } from '../util/index'
 import { resolveSlots } from './render'
+import { updateComponentListeners } from './events'
 
 export let activeInstance: any = null
 
@@ -41,10 +42,10 @@ export function lifecycleMixin (Vue: Class<Component>) {
     const vm: Component = this
     vm.$el = el
     if (!vm.$options.render) {
-      vm.$options.render = emptyVNode
+      vm.$options.render = createEmptyVNode
       if (process.env.NODE_ENV !== 'production') {
         /* istanbul ignore if */
-        if (vm.$options.template) {
+        if (vm.$options.template && vm.$options.template.charAt(0) !== '#') {
           warn(
             'You are using the runtime-only build of Vue where the template ' +
             'option is not available. Either pre-compile the templates into ' +
@@ -79,15 +80,21 @@ export function lifecycleMixin (Vue: Class<Component>) {
       callHook(vm, 'beforeUpdate')
     }
     const prevEl = vm.$el
+    const prevVnode = vm._vnode
     const prevActiveInstance = activeInstance
     activeInstance = vm
-    const prevVnode = vm._vnode
     vm._vnode = vnode
+    // Vue.prototype.__patch__ is injected in entry points
+    // based on the rendering backend used.
     if (!prevVnode) {
-      // Vue.prototype.__patch__ is injected in entry points
-      // based on the rendering backend used.
-      vm.$el = vm.__patch__(vm.$el, vnode, hydrating)
+      // initial render
+      vm.$el = vm.__patch__(
+        vm.$el, vnode, hydrating, false /* removeOnly */,
+        vm.$options._parentElm,
+        vm.$options._refElm
+      )
     } else {
+      // updates
       vm.$el = vm.__patch__(prevVnode, vnode)
     }
     activeInstance = prevActiveInstance
@@ -111,11 +118,15 @@ export function lifecycleMixin (Vue: Class<Component>) {
     propsData: ?Object,
     listeners: ?Object,
     parentVnode: VNode,
-    renderChildren: ?VNodeChildren
+    renderChildren: ?Array<VNode>
   ) {
     const vm: Component = this
     const hasChildren = !!(vm.$options._renderChildren || renderChildren)
     vm.$options._parentVnode = parentVnode
+    vm.$vnode = parentVnode // update vm's placeholder node without re-render
+    if (vm._vnode) { // update child tree's parent
+      vm._vnode.parent = parentVnode
+    }
     vm.$options._renderChildren = renderChildren
     // update props
     if (propsData && vm.$options.props) {
@@ -132,16 +143,17 @@ export function lifecycleMixin (Vue: Class<Component>) {
       if (process.env.NODE_ENV !== 'production') {
         observerState.isSettingProps = false
       }
+      vm.$options.propsData = propsData
     }
     // update listeners
     if (listeners) {
       const oldListeners = vm.$options._parentListeners
       vm.$options._parentListeners = listeners
-      vm._updateListeners(listeners, oldListeners)
+      updateComponentListeners(vm, listeners, oldListeners)
     }
     // resolve slots + force update if has children
     if (hasChildren) {
-      vm.$slots = resolveSlots(renderChildren, vm._renderContext)
+      vm.$slots = resolveSlots(renderChildren, parentVnode.context)
       vm.$forceUpdate()
     }
   }
@@ -199,5 +211,7 @@ export function callHook (vm: Component, hook: string) {
       handlers[i].call(vm)
     }
   }
-  vm.$emit('hook:' + hook)
+  if (vm._hasHookEvent) {
+    vm.$emit('hook:' + hook)
+  }
 }

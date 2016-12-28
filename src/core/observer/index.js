@@ -1,6 +1,5 @@
 /* @flow */
 
-import config from '../config'
 import Dep from './dep'
 import { arrayMethods } from './array'
 import {
@@ -9,7 +8,8 @@ import {
   isPlainObject,
   hasProto,
   hasOwn,
-  warn
+  warn,
+  isServerRendering
 } from '../util/index'
 
 const arrayKeys = Object.getOwnPropertyNames(arrayMethods)
@@ -89,9 +89,8 @@ function protoAugment (target, src: Object) {
 /**
  * Augment an target Object or Array by defining
  * hidden properties.
- *
- * istanbul ignore next
  */
+/* istanbul ignore next */
 function copyAugment (target: Object, src: Object, keys: Array<string>) {
   for (let i = 0, l = keys.length; i < l; i++) {
     const key = keys[i]
@@ -104,7 +103,7 @@ function copyAugment (target: Object, src: Object, keys: Array<string>) {
  * returns the new observer if successfully observed,
  * or the existing observer if the value already has one.
  */
-export function observe (value: any): Observer | void {
+export function observe (value: any, asRootData: ?boolean): Observer | void {
   if (!isObject(value)) {
     return
   }
@@ -113,12 +112,15 @@ export function observe (value: any): Observer | void {
     ob = value.__ob__
   } else if (
     observerState.shouldConvert &&
-    !config._isServer &&
+    !isServerRendering() &&
     (Array.isArray(value) || isPlainObject(value)) &&
     Object.isExtensible(value) &&
     !value._isVue
   ) {
     ob = new Observer(value)
+  }
+  if (asRootData && ob) {
+    ob.vmCount++
   }
   return ob
 }
@@ -162,9 +164,11 @@ export function defineReactive (
     },
     set: function reactiveSetter (newVal) {
       const value = getter ? getter.call(obj) : val
-      if (newVal === value) {
+      /* eslint-disable no-self-compare */
+      if (newVal === value || (newVal !== newVal && value !== value)) {
         return
       }
+      /* eslint-enable no-self-compare */
       if (process.env.NODE_ENV !== 'production' && customSetter) {
         customSetter()
       }
@@ -186,6 +190,7 @@ export function defineReactive (
  */
 export function set (obj: Array<any> | Object, key: any, val: any) {
   if (Array.isArray(obj)) {
+    obj.length = Math.max(obj.length, key)
     obj.splice(key, 1, val)
     return val
   }

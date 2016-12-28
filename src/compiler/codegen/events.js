@@ -1,9 +1,10 @@
 /* @flow */
 
-const simplePathRE = /^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['.*?'\]|\[".*?"\]|\[\d+\]|\[[A-Za-z_$][\w$]*\])*\s*$/
+const fnExpRE = /^\s*([\w$_]+|\([^)]*?\))\s*=>|^function\s*\(/
+const simplePathRE = /^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\['.*?']|\[".*?"]|\[\d+]|\[[A-Za-z_$][\w$]*])*\s*$/
 
 // keyCode aliases
-const keyCodes = {
+const keyCodes: { [k: any]: number | [number, number] } = {
   esc: 27,
   tab: 9,
   enter: 13,
@@ -15,29 +16,34 @@ const keyCodes = {
   'delete': [8, 46]
 }
 
-const modifierCode = {
+const modifierCode: { [k: string]: string } = {
   stop: '$event.stopPropagation();',
   prevent: '$event.preventDefault();',
-  self: 'if($event.target !== $event.currentTarget)return;'
+  self: 'if($event.target !== $event.currentTarget)return;',
+  ctrl: 'if(!$event.ctrlKey)return;',
+  shift: 'if(!$event.shiftKey)return;',
+  alt: 'if(!$event.altKey)return;',
+  meta: 'if(!$event.metaKey)return;'
 }
 
 export function genHandlers (events: ASTElementHandlers, native?: boolean): string {
   let res = native ? 'nativeOn:{' : 'on:{'
   for (const name in events) {
-    res += `"${name}":${genHandler(events[name])},`
+    res += `"${name}":${genHandler(name, events[name])},`
   }
   return res.slice(0, -1) + '}'
 }
 
 function genHandler (
+  name: string,
   handler: ASTElementHandler | Array<ASTElementHandler>
 ): string {
   if (!handler) {
     return 'function(){}'
   } else if (Array.isArray(handler)) {
-    return `[${handler.map(genHandler).join(',')}]`
+    return `[${handler.map(handler => genHandler(name, handler)).join(',')}]`
   } else if (!handler.modifiers) {
-    return simplePathRE.test(handler.value)
+    return fnExpRE.test(handler.value) || simplePathRE.test(handler.value)
       ? handler.value
       : `function($event){${handler.value}}`
   } else {
@@ -61,20 +67,14 @@ function genHandler (
 }
 
 function genKeyFilter (keys: Array<string>): string {
-  const code = keys.length === 1
-    ? normalizeKeyCode(keys[0])
-    : Array.prototype.concat.apply([], keys.map(normalizeKeyCode))
-  if (Array.isArray(code)) {
-    return `if(${code.map(c => `$event.keyCode!==${c}`).join('&&')})return;`
-  } else {
-    return `if($event.keyCode!==${code})return;`
-  }
+  return `if(${keys.map(genFilterCode).join('&&')})return;`
 }
 
-function normalizeKeyCode (key) {
-  return (
-    parseInt(key, 10) || // number keyCode
-    keyCodes[key] || // built-in alias
-    `_k(${JSON.stringify(key)})` // custom alias
-  )
+function genFilterCode (key: number | string): string {
+  const keyVal = parseInt(key, 10)
+  if (keyVal) {
+    return `$event.keyCode!==${keyVal}`
+  }
+  const alias = keyCodes[key]
+  return `_k($event.keyCode,${JSON.stringify(key)}${alias ? ',' + JSON.stringify(alias) : ''})`
 }

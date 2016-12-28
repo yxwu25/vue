@@ -574,4 +574,57 @@ describe('Component slot', () => {
     }).$mount()
     expect(vm.$el.innerHTML.trim()).toBe('<div>two</div><div>one</div>')
   })
+
+  // #4209
+  it('slot of multiple text nodes should not be infinitely merged', done => {
+    const wrap = {
+      template: `<inner ref="inner">foo<slot></slot></inner>`,
+      components: {
+        inner: {
+          data: () => ({ a: 1 }),
+          template: `<div>{{a}}<slot></slot></div>`
+        }
+      }
+    }
+    const vm = new Vue({
+      template: `<wrap ref="wrap">bar</wrap>`,
+      components: { wrap }
+    }).$mount()
+
+    expect(vm.$el.textContent).toBe('1foobar')
+    vm.$refs.wrap.$refs.inner.a++
+    waitForUpdate(() => {
+      expect(vm.$el.textContent).toBe('2foobar')
+    }).then(done)
+  })
+
+  // #4315
+  it('functional component passing slot content to stateful child component', done => {
+    const ComponentWithSlots = {
+      render (h) {
+        return h('div', this.$slots.slot1)
+      }
+    }
+
+    const FunctionalComp = {
+      functional: true,
+      render (h) {
+        return h(ComponentWithSlots, [h('span', { slot: 'slot1' }, 'foo')])
+      }
+    }
+
+    const vm = new Vue({
+      data: { n: 1 },
+      render (h) {
+        return h('div', [this.n, h(FunctionalComp)])
+      }
+    }).$mount()
+
+    expect(vm.$el.textContent).toBe('1foo')
+    vm.n++
+    waitForUpdate(() => {
+      // should not lose named slot
+      expect(vm.$el.textContent).toBe('2foo')
+    }).then(done)
+  })
 })
